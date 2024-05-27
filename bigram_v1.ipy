@@ -47,11 +47,16 @@ class BigramModel(torch.nn.Module):
 
         self.vocab_size = vocab_size
         self.embedding = torch.nn.Embedding(vocab_size, n_embed)
+        self.pos_embedding = torch.nn.Embedding(block_size, n_embed)
         self.lm_head = torch.nn.Linear(n_embed, vocab_size)
 
     def forward(self, x, targets=None):
+        B, T = x.shape
 
         token_embeddings = self.embedding(x)
+        pos_embeddings = self.pos_embedding(torch.arange(T))
+
+        token_embeddings += pos_embeddings
         logits = self.lm_head(token_embeddings)
 
         if targets is None:
@@ -65,8 +70,9 @@ class BigramModel(torch.nn.Module):
 
     def generate_text(self, x, steps=500):
         for _ in range(steps):
-            logits, _ = self(x)
-            last_logits = logits[:, -1, :]
+            truncated_x = x[:, -block_size:]
+            logits, _ = self(truncated_x)
+            last_logits = logits[:, -1, :]  # B x T x C
             probs = torch.functional.F.softmax(last_logits, dim=-1)
             next_token = torch.multinomial(probs, num_samples=1)
 
