@@ -3,6 +3,7 @@ import torch
 train_split = 0.8
 block_size = 8
 batch_size = 32
+n_embed = 32
 
 
 def load_data() -> str:
@@ -44,20 +45,23 @@ class BigramModel(torch.nn.Module):
     def __init__(self, vocab_size):
         super().__init__()
 
-        self.embedding = torch.nn.Embedding(vocab_size, vocab_size)
         self.vocab_size = vocab_size
+        self.embedding = torch.nn.Embedding(vocab_size, n_embed)
+        self.lm_head = torch.nn.Linear(n_embed, vocab_size)
 
     def forward(self, x, targets=None):
-        x = self.embedding(x)
+
+        token_embeddings = self.embedding(x)
+        logits = self.lm_head(token_embeddings)
 
         if targets is None:
-            return x, None
+            return logits, None
 
         loss = torch.nn.functional.cross_entropy(
-            x.view(-1, self.vocab_size), targets.view(-1)
+            logits.view(-1, self.vocab_size), targets.view(-1)
         )
 
-        return x, loss
+        return logits, loss
 
     def generate_text(self, x, steps=500):
         for _ in range(steps):
