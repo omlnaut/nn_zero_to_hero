@@ -1,11 +1,15 @@
+import time
+
 import torch
 
-from transformer import SelfAttentionHead, Tokenizer
+from transformer import MultiHeadAttention, Tokenizer
 
 train_split = 0.8
-block_size = 8
-batch_size = 32
+block_size = 256
+batch_size = 256
 n_embed = 32
+n_heads = 16
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_data() -> str:
@@ -33,7 +37,12 @@ class BigramModel(torch.nn.Module):
         self.embedding = torch.nn.Embedding(vocab_size, n_embed)
         self.pos_embedding = torch.nn.Embedding(block_size, n_embed)
 
-        self.sa_head = SelfAttentionHead(n_embed, n_embed, n_embed)
+        self.sa_heads = MultiHeadAttention(
+            n_heads=n_heads,
+            head_size=n_embed // n_heads,
+            token_size=n_embed,
+            block_size=block_size,
+        )
 
         self.lm_head = torch.nn.Linear(n_embed, vocab_size)
 
@@ -41,11 +50,11 @@ class BigramModel(torch.nn.Module):
         B, T = x.shape
 
         token_embeddings = self.embedding(x)
-        pos_embeddings = self.pos_embedding(torch.arange(T))
+        pos_embeddings = self.pos_embedding(torch.arange(T).to(x.device))
 
         token_embeddings += pos_embeddings
 
-        token_embeddings = self.sa_head(token_embeddings)
+        token_embeddings = self.sa_heads(token_embeddings)
 
         logits = self.lm_head(token_embeddings)
 
@@ -79,7 +88,7 @@ class BigramModel(torch.nn.Module):
 
 
 def train_loop(
-    n_batches: int, model: BigramModel, data: torch.Tensor, lr: float = 0.01
+    n_batches: int, model: BigramModel, data: torch.Tensor, lr: float = 3e-3
 ):
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     print_every = int(n_batches * 0.1)
@@ -102,7 +111,7 @@ if __name__ == "__main__":
     tokenizer = Tokenizer(text)
     vocab_size = tokenizer.vocab_size
 
-    data = tokenizer.encode(text)
+    data = tokenizer.encode(text).to(device)
     print(f"Length of data: {len(data)}")
 
     split = int(len(data) * train_split)
@@ -111,9 +120,13 @@ if __name__ == "__main__":
     print(f"Train size: {len(train)}")
     print(f"Test size: {len(test)}")
 
-    model = BigramModel(vocab_size)
+    model = BigramModel(vocab_size).to(device)
 
-    train_loop(1000, model, train)
+    print(f"Training model on device {device}...")
+    start = time.time()
+    train_loop(5000, model, train)
+    duration = time.time() - start
+    print(f"Training took {duration:.2f} seconds")
 
     print("Generating text...")
     text = model.generate_text(torch.zeros((1, 1), dtype=torch.long))
